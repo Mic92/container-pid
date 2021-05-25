@@ -9,5 +9,5 @@ repository = "https://github.com/Mic92/container-pid"
 edition = "2018"
 
 [dependencies]
-libc = "*"
-simple-error = "*"
+libc = "~0"
+simple-error = "~0"
