@@ -2,6 +2,10 @@
 name = "container-pid"
 version = "0.1.0"
 authors = ["Jörg Thalheim <joerg@thalheim.io>"]
+description = "Resolve container names to their PIDs"
+license = "MIT"
+categories = ["os::linux-apis"]
+repository = "https://github.com/Mic92/container-pid"
 edition = "2018"
 
 [dependencies]
