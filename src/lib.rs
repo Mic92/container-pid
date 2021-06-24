@@ -1,20 +1,21 @@
 use libc::pid_t;
-use std::fmt::Debug;
 use simple_error::bail;
+use std::fmt::Debug;
 
-use crate::result::{Result};
+use crate::result::Result;
 
+mod cmd;
 mod command;
 mod containerd;
 mod docker;
+mod kubernetes;
 mod lxc;
 mod lxd;
 mod nspawn;
 mod podman;
 mod process_id;
-mod rkt;
 mod result;
-mod cmd;
+mod rkt;
 
 pub trait Container: Debug {
     fn lookup(&self, id: &str) -> Result<pid_t>;
@@ -31,6 +32,7 @@ pub const AVAILABLE_CONTAINER_TYPES: &[&str] = &[
     "lxd",
     "command",
     "containerd",
+    "kubernetes",
 ];
 
 fn default_order() -> Vec<Box<dyn Container>> {
@@ -43,6 +45,7 @@ fn default_order() -> Vec<Box<dyn Container>> {
         Box::new(lxc::Lxc {}),
         Box::new(lxd::Lxd {}),
         Box::new(containerd::Containerd {}),
+        Box::new(kubernetes::Kubernetes {}),
     ];
     containers
         .into_iter()
@@ -61,6 +64,7 @@ pub fn lookup_container_type(name: &str) -> Option<Box<dyn Container>> {
         "lxd" => Box::new(lxd::Lxd {}),
         "containerd" => Box::new(containerd::Containerd {}),
         "command" => Box::new(command::Command {}),
+        "kubernetes" => Box::new(kubernetes::Kubernetes {}),
         _ => return None,
     })
 }
