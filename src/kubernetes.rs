@@ -10,7 +10,6 @@
 use crate::cmd;
 use crate::result::Result;
 use crate::Container;
-use serde_json as json;
 use simple_error::{bail, require_with, try_with};
 use std::ffi::OsString;
 use std::fs;
@@ -18,7 +17,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::from_utf8;
 use std::str::FromStr;
-use url::Url;
 
 #[derive(Clone, Debug)]
 pub struct Kubernetes {}
@@ -71,29 +69,24 @@ pub fn parse_userinput(container_id: &str) -> Result<(&str, &str, Option<&str>)>
     unreachable!();
 }
 
-/// find `containerd://hash` id and return hash
+/// find `containerd://hash` id and return hash.
+/// Potentially vulnerable: passes unchecked user supplied strings to command.
 pub fn get_containerd_id(
     namespace: &str,
     pod_name: &str,
     container_name: Option<&str>,
 ) -> Result<String> {
-    // kubectl get --raw "/api/v1/namespaces/knative-serving/pods/autoscaler-589958b7b6-l4cb6"
-    // equivalent to `kubectl describe -n knative-serving autoscaler-589958b7b6-l4cb6`
-    let mut url = Url::parse("https://something/api/v1/").unwrap();
-    url.path_segments_mut()
-        .unwrap()
-        .push("namespaces")
-        .push(namespace)
-        .push("pods")
-        .push(pod_name);
-    let url = url.path();
+    let jsonpath = format!("jsonpath='{{range .items[?(@.metadata.name==\"{}\")].status.containerStatuses[*]}}{{.name}}{{\"\\t\"}}{{.containerID}}{{\"\\n\"}}{{end}}'", pod_name);
     let result = try_with!(
         Command::new("kubectl")
             .arg("get")
-            .arg("--raw")
-            .arg(url)
+            .arg("pod")
+            .arg("-o")
+            .arg(jsonpath)
+            .arg("-n")
+            .arg(namespace)
             .output(),
-        "kubctl command cannot be spawned"
+        "kubectl command cannot be spawned"
     );
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
@@ -104,37 +97,30 @@ pub fn get_containerd_id(
         );
     }
 
-    // parse response. Spec:
-    // https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/pod-v1/#Pod
-    let json: json::Value = try_with!(
-        json::from_str(try_with!(
-            from_utf8(&result.stdout),
-            "response contains non-utf8"
-        )),
-        "failed to parse kubectl get pod response"
-    );
-    let containers = require_with!(
-        json["status"]["containerStatuses"].as_array(),
-        "failed to parse kubectl get pod response json 1"
-    );
-    if containers.is_empty() {
-        bail!("no containers present to attach to");
-    }
-    // choose container according to parse_userinput
-    let container = match container_name {
-        None => &containers[0],
-        Some(name) => require_with!(
-            containers.iter().find(|status| status["name"] == name),
-            "no container {} found in {}/{}",
-            name,
-            namespace,
-            pod_name
-        ),
-    };
+    let containers = try_with!(from_utf8(&result.stdout), "response contains non-utf8");
+    let containerid = containers.split('\n').find_map(|line| {
+        // line = "containername\tcontainerdid"
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() != 2 {
+            return None;
+        }
+        if let Some(name) = container_name {
+            // return name-matching containerid
+            if cols[0] == name {
+                return Some(cols[1]);
+            }
+        } else {
+            // return any containerid
+            return Some(cols[1]);
+        }
+        None
+    });
     let containerid = require_with!(
-        container["containerID"].as_str(),
-        "failed to parse kubectl get pod response json 2"
+        containerid,
+        "no container found matching {:?}",
+        container_name
     );
+
     let containerid = require_with!(
         containerid.strip_prefix("containerd://"),
         "unexpected/unparsable containerd id"
