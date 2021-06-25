@@ -16,6 +16,7 @@ mod podman;
 mod process_id;
 mod result;
 mod rkt;
+mod vhive;
 
 pub trait Container: Debug {
     fn lookup(&self, id: &str) -> Result<pid_t>;
@@ -33,6 +34,7 @@ pub const AVAILABLE_CONTAINER_TYPES: &[&str] = &[
     "command",
     "containerd",
     "kubernetes",
+    "vhive",
 ];
 
 fn default_order() -> Vec<Box<dyn Container>> {
@@ -46,6 +48,7 @@ fn default_order() -> Vec<Box<dyn Container>> {
         Box::new(lxd::Lxd {}),
         Box::new(containerd::Containerd {}),
         Box::new(kubernetes::Kubernetes {}),
+        Box::new(vhive::Vhive {}),
     ];
     containers
         .into_iter()
@@ -65,6 +68,7 @@ pub fn lookup_container_type(name: &str) -> Option<Box<dyn Container>> {
         "containerd" => Box::new(containerd::Containerd {}),
         "command" => Box::new(command::Command {}),
         "kubernetes" => Box::new(kubernetes::Kubernetes {}),
+        "vhive" => Box::new(vhive::Vhive {}),
         _ => return None,
     })
 }

@@ -1,7 +1,7 @@
 //! This module uses `kubectl` to get a containerd id and then searches cgroups for one with that
-//! id as name. It returns any pid which is a member of that group. 
+//! id as name. It returns any pid which is a member of that group.
 //!
-//! Possible container_id inputs: 
+//! Possible container_id inputs:
 //!
 //! - `podname` to use default namespace and first container in that pod
 //! - one `/`: `namespace/podname` to override default namespace
@@ -22,7 +22,7 @@ use std::str::FromStr;
 #[derive(Clone, Debug)]
 pub struct Kubernetes {}
 
-const DEFAULT_NAMESPACE: &str = "default";
+pub const DEFAULT_NAMESPACE: &str = "default";
 
 impl Container for Kubernetes {
     /// There is many ways to do this:
@@ -58,7 +58,7 @@ impl Container for Kubernetes {
 /// allows the user to prepend the pod name with `custom-namespace/pod-name` to override the
 /// namespace (`default`). By default this will take the first container of the pod. That however
 /// can be overridden by appending it like `namespace/podname/container`.
-fn parse_userinput(container_id: &str) -> Result<(&str, &str, Option<&str>)> {
+pub fn parse_userinput(container_id: &str) -> Result<(&str, &str, Option<&str>)> {
     let fields = container_id.splitn(3, '/').collect::<Vec<&str>>();
     if fields.len() == 1 {
         return Ok((DEFAULT_NAMESPACE, container_id, None));
@@ -178,6 +178,6 @@ pub fn get_cgroup_pid(cgroup: &Path) -> Result<libc::pid_t> {
         "kernel does not respond with valid encoding"
     );
     let pids = pids.splitn(2, '\n').collect::<Vec<&str>>()[0]; // first line
-    let pid: u64 = try_with!(u64::from_str(pids), "cannot parse pid ({:?})");
+    let pid: u64 = try_with!(u64::from_str(pids), "cannot parse pid ({:?})", pids);
     Ok(pid as libc::pid_t)
 }
