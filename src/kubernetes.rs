@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::from_utf8;
 use std::str::FromStr;
+use url::Url;
 
 #[derive(Clone, Debug)]
 pub struct Kubernetes {}
@@ -76,18 +77,16 @@ pub fn get_containerd_id(
     pod_name: &str,
     container_name: Option<&str>,
 ) -> Result<String> {
-    if namespace.contains("/") || pod_name.contains("/") {
-        bail!(
-            "namespace and pod_name must not contain '/': {} {}",
-            namespace,
-            pod_name
-        );
-    }
-
     // kubectl get --raw "/api/v1/namespaces/knative-serving/pods/autoscaler-589958b7b6-l4cb6"
     // equivalent to `kubectl describe -n knative-serving autoscaler-589958b7b6-l4cb6`
-    // TODO use proper urlencode() like extern crate url::PathSegmentsMut::push() to avoid vulns
-    let url = format!("/api/v1/namespaces/{}/pods/{}", namespace, pod_name);
+    let mut url = Url::parse("https://something/api/v1/").unwrap();
+    url.path_segments_mut()
+        .unwrap()
+        .push("namespaces")
+        .push(namespace)
+        .push("pods")
+        .push(pod_name);
+    let url = url.path();
     let result = try_with!(
         Command::new("kubectl")
             .arg("get")
