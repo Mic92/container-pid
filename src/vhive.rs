@@ -41,7 +41,7 @@ impl Container for Vhive {
             containerdid
         );
         let pid = try_with!(
-            find_fc_pid(fcvmid),
+            find_fc_pid(&fcvmid),
             "cannot find pid for firecracker vmID {}",
             fcvmid
         );
@@ -60,7 +60,7 @@ impl Container for Vhive {
 }
 
 /// get firecracker vm id
-fn get_fcvmid(containerd_id: &str) -> Result<usize> {
+fn get_fcvmid(containerd_id: &str) -> Result<String> {
     // get lines from journalctl
     let keyword = format!("user-containerID={}", containerd_id);
     let arg = format!("--grep={}", keyword);
@@ -96,12 +96,11 @@ fn get_fcvmid(containerd_id: &str) -> Result<usize> {
         first.split(' ').find_map(|kv| kv.strip_prefix("vmID=")),
         "foo"
     );
-    let vmid: usize = try_with!(usize::from_str(vmid), "cannot parse vm id ({:?})", vmid);
-    Ok(vmid)
+    Ok(String::from(vmid))
 }
 
 /// search which process has known_file open
-fn find_fc_pid(vmid: usize) -> Result<libc::pid_t> {
+fn find_fc_pid(vmid: &str) -> Result<libc::pid_t> {
     let known_file = PathBuf::from(format!("/tmp/log_{}_start.logs", vmid));
 
     // go trough all processes and seach for name=*firecracker* and open_filedescriptor=known_file
