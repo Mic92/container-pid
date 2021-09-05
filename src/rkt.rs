@@ -1,13 +1,13 @@
 use libc::pid_t;
+use simple_error::{bail, try_with};
 use std::fs::{self, File};
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::process::Command;
-use simple_error::{try_with, bail};
 
 use crate::cmd;
-use crate::Container;
 use crate::result::Result;
+use crate::Container;
 
 #[derive(Clone, Debug)]
 pub struct Rkt {}
@@ -76,7 +76,8 @@ impl Container for Rkt {
             let stdout = String::from_utf8_lossy(&output.stdout);
             bail!(
                 "expected to find `pid=` field in output of '{}', got: {}",
-                command, stdout
+                command,
+                stdout
             )
         }
     }

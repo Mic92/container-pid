@@ -1,13 +1,13 @@
 use libc::pid_t;
+use simple_error::{bail, try_with};
+use std::env;
+use std::ffi::OsString;
 use std::fs;
 use std::io::ErrorKind;
-use simple_error::{try_with, bail};
-use std::ffi::OsString;
 use std::path::PathBuf;
-use std::env;
 
-use crate::Container;
 use crate::result::Result;
+use crate::Container;
 
 #[derive(Clone, Debug)]
 pub struct ProcessId {}

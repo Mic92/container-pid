@@ -1,10 +1,10 @@
 use libc::pid_t;
+use simple_error::{bail, try_with};
 use std::process::Command;
-use simple_error::{try_with, bail};
 
 use crate::cmd;
-use crate::Container;
 use crate::result::Result;
+use crate::Container;
 
 #[derive(Clone, Debug)]
 pub struct Nspawn {}

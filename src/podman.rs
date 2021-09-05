@@ -2,8 +2,8 @@ use simple_error::bail;
 
 use crate::cmd;
 use crate::docker::parse_docker_output;
-use crate::Container;
 use crate::result::Result;
+use crate::Container;
 
 #[derive(Clone, Debug)]
 pub struct Podman {}

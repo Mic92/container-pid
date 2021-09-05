@@ -1,10 +1,10 @@
 use libc::c_char;
-use std::env;
 use simple_error::bail;
-use std::ptr;
-use std::os::unix::ffi::OsStrExt;
+use std::env;
 use std::ffi::CStr;
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use std::ptr;
 
 use crate::result::Result;
 
