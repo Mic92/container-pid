@@ -2,7 +2,7 @@ use container_pid::{lookup_container_pid, lookup_container_type};
 use std::env;
 use std::process::exit;
 
-pub fn main() {
+pub(crate) fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!("USAGE: {} container-name [container-type]", args[0]);

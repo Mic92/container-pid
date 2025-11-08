@@ -1,4 +1,4 @@
-use simple_error::bail;
+use anyhow::bail;
 
 use crate::cmd;
 use crate::docker::parse_docker_output;
@@ -6,7 +6,7 @@ use crate::result::Result;
 use crate::Container;
 
 #[derive(Clone, Debug)]
-pub struct Podman {}
+pub(crate) struct Podman {}
 
 impl Container for Podman {
     fn lookup(&self, container_id: &str) -> Result<libc::pid_t> {
@@ -23,7 +23,7 @@ impl Container for Podman {
         if cmd::which("podman").is_some() {
             Ok(())
         } else {
-            bail!("podman not found")
+            bail!("podman runtime not found: 'podman' command is not available")
         }
     }
 }

@@ -1,20 +1,21 @@
-use simple_error::{bail, try_with};
+use anyhow::{bail, Context};
 use std::fs;
 
 use crate::result::Result;
 use crate::Container;
 
 #[derive(Clone, Debug)]
-pub struct Command {}
+pub(crate) struct Command {}
 
 impl Container for Command {
     fn lookup(&self, container_id: &str) -> Result<libc::pid_t> {
         let needle = container_id.as_bytes();
-        let dir = try_with!(fs::read_dir("/proc"), "failed to read /proc directory");
+        let dir =
+            fs::read_dir("/proc").context("failed to read /proc directory - is procfs mounted?")?;
         let own_pid = std::process::id() as libc::pid_t;
 
         for entry in dir {
-            let entry = try_with!(entry, "error while reading /proc");
+            let entry = entry.context("failed to read entry in /proc")?;
             let cmdline = entry.path().join("cmdline");
             let pid = match entry.file_name().to_string_lossy().parse::<libc::pid_t>() {
                 Ok(pid) => pid,
@@ -43,7 +44,10 @@ impl Container for Command {
             }
         }
 
-        bail!("No command found that matches {}", container_id)
+        bail!(
+            "no process found with command line matching '{}'",
+            container_id
+        )
     }
     fn check_required_tools(&self) -> Result<()> {
         Ok(())

@@ -1,3 +1,4 @@
+use anyhow::bail;
 use libc::pid_t;
 use std::fmt::Debug;
 
@@ -22,7 +23,6 @@ pub trait Container: Debug {
 
 pub const AVAILABLE_CONTAINER_TYPES: &[&str] = &[
     "process_id",
-    "rkt",
     "podman",
     "docker",
     "nspawn",
@@ -31,14 +31,11 @@ pub const AVAILABLE_CONTAINER_TYPES: &[&str] = &[
     "command",
     "containerd",
     "kubernetes",
-    "vhive",
-    "vhive_fc_vmid",
 ];
 
 fn default_order() -> Vec<Box<dyn Container>> {
     let containers: Vec<Box<dyn Container>> = vec![
         Box::new(process_id::ProcessId {}),
-        Box::new(rkt::Rkt {}),
         Box::new(podman::Podman {}),
         Box::new(docker::Docker {}),
         Box::new(nspawn::Nspawn {}),
@@ -46,8 +43,6 @@ fn default_order() -> Vec<Box<dyn Container>> {
         Box::new(lxd::Lxd {}),
         Box::new(containerd::Containerd {}),
         Box::new(kubernetes::Kubernetes {}),
-        Box::new(vhive::Vhive {}),
-        Box::new(vhive_fc_vmid::VhiveFcVmid {}),
     ];
     containers
         .into_iter()
@@ -58,7 +53,6 @@ fn default_order() -> Vec<Box<dyn Container>> {
 pub fn lookup_container_type(name: &str) -> Option<Box<dyn Container>> {
     Some(match name {
         "process_id" => Box::new(process_id::ProcessId {}),
-        "rkt" => Box::new(rkt::Rkt {}),
         "podman" => Box::new(podman::Podman {}),
         "docker" => Box::new(docker::Docker {}),
         "nspawn" => Box::new(nspawn::Nspawn {}),
@@ -67,8 +61,6 @@ pub fn lookup_container_type(name: &str) -> Option<Box<dyn Container>> {
         "containerd" => Box::new(containerd::Containerd {}),
         "command" => Box::new(command::Command {}),
         "kubernetes" => Box::new(kubernetes::Kubernetes {}),
-        "vhive" => Box::new(vhive::Vhive {}),
-        "vhive_fc_vmid" => Box::new(vhive_fc_vmid::VhiveFcVmid {}),
         _ => return None,
     })
 }
@@ -87,7 +79,7 @@ pub fn lookup_container_pid(
         container_types
     };
 
-    let mut message = String::from("no suitable container found, got the following errors:");
+    let mut message = String::from("failed to find container - tried the following runtimes:");
     for t in types {
         match t.lookup(container_id) {
             Ok(pid) => return Ok(pid),

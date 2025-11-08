@@ -1,5 +1,5 @@
+use anyhow::{bail, Context};
 use libc::pid_t;
-use simple_error::{bail, try_with};
 use std::process::Command;
 
 use crate::cmd;
@@ -7,27 +7,32 @@ use crate::result::Result;
 use crate::Container;
 
 #[derive(Clone, Debug)]
-pub struct Docker {}
+pub(crate) struct Docker {}
 
-pub fn parse_docker_output(cmd: &[&str], container_id: &str) -> Result<pid_t> {
-    let output = try_with!(
-        Command::new(&cmd[0]).args(&cmd[1..]).output(),
-        "Running '{}' failed",
-        cmd.join(" ")
-    );
+pub(crate) fn parse_docker_output(cmd: &[&str], container_id: &str) -> Result<pid_t> {
+    let cmd_str = cmd.join(" ");
+    let output = Command::new(&cmd[0])
+        .args(&cmd[1..])
+        .output()
+        .with_context(|| format!("failed to execute command: {}", cmd_str))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!(
-            "Failed to list containers. '{}' exited with {}: {}",
-            cmd.join(" "),
+            "docker command failed (exit status {}): {}\nCommand: {}",
             output.status,
-            stderr.trim_end()
+            stderr.trim_end(),
+            cmd_str
         );
     }
 
     let fields: Vec<&[u8]> = output.stdout.splitn(2, |c| *c == b';').collect();
-    assert!(fields.len() == 2);
+    if fields.len() != 2 {
+        bail!(
+            "unexpected docker output format for container '{}'",
+            container_id
+        );
+    }
 
     if fields[0] != b"true" {
         bail!("container '{}' is not running", container_id);
@@ -35,12 +40,13 @@ pub fn parse_docker_output(cmd: &[&str], container_id: &str) -> Result<pid_t> {
 
     let pid = String::from_utf8_lossy(fields[1]);
 
-    Ok(try_with!(
-        pid.trim_end().parse::<pid_t>(),
-        "expected valid process id from '{}', got: {}",
-        cmd.join(" "),
-        pid
-    ))
+    pid.trim_end().parse::<pid_t>().with_context(|| {
+        format!(
+            "invalid PID '{}' from docker for container '{}'",
+            pid.trim_end(),
+            container_id
+        )
+    })
 }
 
 impl Container for Docker {
@@ -63,6 +69,6 @@ impl Container for Docker {
             return Ok(());
         }
 
-        bail!("Neither docker or docker-pid was found")
+        bail!("docker runtime not found: neither 'docker' nor 'docker-pid' command is available")
     }
 }
