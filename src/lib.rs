@@ -1,5 +1,4 @@
 use libc::pid_t;
-use simple_error::bail;
 use std::fmt::Debug;
 
 use crate::result::Result;
@@ -15,9 +14,6 @@ mod nspawn;
 mod podman;
 mod process_id;
 mod result;
-mod rkt;
-mod vhive;
-mod vhive_fc_vmid;
 
 pub trait Container: Debug {
     fn lookup(&self, id: &str) -> Result<pid_t>;
