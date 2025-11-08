@@ -1,5 +1,5 @@
+use anyhow::{bail, Context};
 use libc::pid_t;
-use simple_error::{bail, try_with};
 use std::env;
 use std::ffi::OsString;
 use std::fs;
@@ -10,7 +10,7 @@ use crate::result::Result;
 use crate::Container;
 
 #[derive(Clone, Debug)]
-pub struct ProcessId {}
+pub(crate) struct ProcessId {}
 
 /// TODO make this configureable?
 fn get_path() -> PathBuf {
@@ -19,17 +19,16 @@ fn get_path() -> PathBuf {
 
 impl Container for ProcessId {
     fn lookup(&self, container_id: &str) -> Result<pid_t> {
-        let pid = match container_id.parse::<pid_t>() {
-            Err(e) => try_with!(Err(e), "not a valid pid: `{}`", container_id),
-            Ok(v) => v,
-        };
+        let pid = container_id
+            .parse::<pid_t>()
+            .with_context(|| format!("'{}' is not a valid PID (process ID)", container_id))?;
 
         match fs::metadata(get_path().join(pid.to_string())) {
             Err(e) => {
                 if e.kind() == ErrorKind::NotFound {
-                    bail!("no process with pid {} found", pid)
+                    bail!("no process with PID {} found", pid)
                 } else {
-                    try_with!(Err(e), "could not lookup process {}", pid)
+                    Err(e).with_context(|| format!("failed to lookup process {}", pid))?
                 }
             }
             Ok(_) => Ok(pid),

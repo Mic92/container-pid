@@ -1,5 +1,5 @@
+use anyhow::{bail, Context};
 use libc::pid_t;
-use simple_error::{bail, try_with};
 use std::process::Command;
 
 use crate::cmd;
@@ -7,22 +7,19 @@ use crate::result::Result;
 use crate::Container;
 
 #[derive(Clone, Debug)]
-pub struct Containerd {}
+pub(crate) struct Containerd {}
 
 impl Container for Containerd {
     fn lookup(&self, container_id: &str) -> Result<pid_t> {
-        let command = "ctr task list";
-        let output = try_with!(
-            Command::new("ctr").args(&["task", "list"]).output(),
-            "Running '{}' failed",
-            command
-        );
+        let output = Command::new("ctr")
+            .args(&["task", "list"])
+            .output()
+            .context("failed to execute 'ctr task list'")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!(
-                "Failed to list containers. '{}' exited with {}: {}",
-                command,
+                "containerd task list failed (exit status {}): {}",
                 output.status,
                 stderr.trim_end()
             );
@@ -48,16 +45,14 @@ impl Container for Containerd {
             }
         });
         match pid_str {
-            Some(pid_str) => {
-                let pid = try_with!(
-                    pid_str.parse::<pid_t>(),
-                    "read invalid pid from ctr task list: '{}'",
-                    pid_str
-                );
-                Ok(pid)
-            }
+            Some(pid_str) => pid_str.parse::<pid_t>().with_context(|| {
+                format!(
+                    "invalid PID '{}' from containerd for container '{}'",
+                    pid_str, container_id
+                )
+            }),
             None => {
-                bail!("No container with id {} found", container_id)
+                bail!("no containerd task found with id '{}'", container_id)
             }
         }
     }
@@ -65,7 +60,7 @@ impl Container for Containerd {
         if cmd::which("ctr").is_some() {
             Ok(())
         } else {
-            bail!("ctr not found")
+            bail!("containerd runtime not found: 'ctr' command is not available")
         }
     }
 }

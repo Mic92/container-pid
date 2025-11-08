@@ -1,5 +1,5 @@
+use anyhow::bail;
 use libc::c_char;
-use simple_error::bail;
 use std::env;
 use std::ffi::CStr;
 use std::os::unix::ffi::OsStrExt;
@@ -12,10 +12,9 @@ fn access<P: AsRef<Path>>(path: &P, amode: libc::c_int) -> Result<()> {
     let mut buf = [0u8; libc::PATH_MAX as usize];
     let path = path.as_ref().as_os_str().as_bytes();
     if path.len() >= libc::PATH_MAX as usize {
-        bail!("invalid argument");
+        bail!("path too long (exceeds PATH_MAX)");
     }
 
-    // TODO: Replace with bytes::copy_memory. rust-lang/rust#24028
     let cstr = unsafe {
         ptr::copy_nonoverlapping(path.as_ptr(), buf.as_mut_ptr(), path.len());
         CStr::from_ptr(buf.as_ptr() as *const c_char)
@@ -23,12 +22,12 @@ fn access<P: AsRef<Path>>(path: &P, amode: libc::c_int) -> Result<()> {
 
     let res = unsafe { libc::access(cstr.as_ptr(), amode) };
     if res < 0 {
-        bail!("access failed: {}", res)
+        bail!("access check failed with code {}", res)
     }
     Ok(())
 }
 
-pub fn which<P>(exe_name: P) -> Option<PathBuf>
+pub(crate) fn which<P>(exe_name: P) -> Option<PathBuf>
 where
     P: AsRef<Path>,
 {

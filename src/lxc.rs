@@ -1,5 +1,5 @@
+use anyhow::{bail, Context};
 use libc::pid_t;
-use simple_error::{bail, try_with};
 use std::process::Command;
 
 use crate::cmd;
@@ -7,24 +7,19 @@ use crate::result::Result;
 use crate::Container;
 
 #[derive(Clone, Debug)]
-pub struct Lxc {}
+pub(crate) struct Lxc {}
 
 impl Container for Lxc {
     fn lookup(&self, container_id: &str) -> Result<pid_t> {
-        let command = format!("lxc-info --no-humanize --pid --name {}", container_id);
-        let output = try_with!(
-            Command::new("lxc-info")
-                .args(&["--no-humanize", "--pid", "--name", container_id])
-                .output(),
-            "Running '{}' failed",
-            command
-        );
+        let output = Command::new("lxc-info")
+            .args(&["--no-humanize", "--pid", "--name", container_id])
+            .output()
+            .context("failed to execute 'lxc-info'")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!(
-                "Failed to list containers. '{}' exited with {}: {}",
-                command,
+                "lxc-info command failed (exit status {}): {}",
                 output.status,
                 stderr.trim_start()
             );
@@ -32,18 +27,19 @@ impl Container for Lxc {
 
         let pid = String::from_utf8_lossy(&output.stdout);
 
-        Ok(try_with!(
-            pid.trim_start().parse::<pid_t>(),
-            "expected valid process id from {}, got: {}",
-            command,
-            pid
-        ))
+        pid.trim_start().parse::<pid_t>().with_context(|| {
+            format!(
+                "invalid PID '{}' from lxc-info for container '{}'",
+                pid.trim(),
+                container_id
+            )
+        })
     }
     fn check_required_tools(&self) -> Result<()> {
         if cmd::which("lxc-info").is_some() {
             Ok(())
         } else {
-            bail!("lxc-info not found")
+            bail!("LXC runtime not found: 'lxc-info' command is not available")
         }
     }
 }
