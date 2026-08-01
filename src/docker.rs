@@ -1,9 +1,9 @@
-use libc::pid_t;
 use std::process::Command;
 
 use crate::cmd;
 use crate::Container;
 use crate::Error;
+use crate::RawPid;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Docker {}
@@ -12,7 +12,7 @@ pub(crate) fn parse_docker_output(
     runtime: &'static str,
     cmd: &[&str],
     container_id: &str,
-) -> Result<pid_t, Error> {
+) -> Result<RawPid, Error> {
     let cmd_str = cmd.join(" ");
     let output = Command::new(cmd[0])
         .args(&cmd[1..])
@@ -49,7 +49,7 @@ pub(crate) fn parse_docker_output(
     let pid = String::from_utf8_lossy(fields[1]);
 
     pid.trim_end()
-        .parse::<pid_t>()
+        .parse::<RawPid>()
         .map_err(|source| Error::InvalidPid {
             pid: pid.trim_end().to_string(),
             runtime,
@@ -59,7 +59,7 @@ pub(crate) fn parse_docker_output(
 }
 
 impl Container for Docker {
-    fn lookup(&self, container_id: &str) -> Result<pid_t, Error> {
+    fn lookup(&self, container_id: &str) -> Result<RawPid, Error> {
         let command = if cmd::which("docker-pid").is_some() {
             vec!["docker-pid", container_id]
         } else {

@@ -3,18 +3,19 @@ use std::path::PathBuf;
 
 use crate::Container;
 use crate::Error;
+use crate::RawPid;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Command {}
 
 impl Container for Command {
-    fn lookup(&self, container_id: &str) -> Result<libc::pid_t, Error> {
+    fn lookup(&self, container_id: &str) -> Result<RawPid, Error> {
         let needle = container_id.as_bytes();
         let dir = fs::read_dir("/proc").map_err(|source| Error::Io {
             path: PathBuf::from("/proc"),
             source,
         })?;
-        let own_pid = std::process::id() as libc::pid_t;
+        let own_pid = std::process::id() as RawPid;
 
         for entry in dir {
             let entry = entry.map_err(|source| Error::Io {
@@ -22,7 +23,7 @@ impl Container for Command {
                 source,
             })?;
             let cmdline = entry.path().join("cmdline");
-            let pid = match entry.file_name().to_string_lossy().parse::<libc::pid_t>() {
+            let pid = match entry.file_name().to_string_lossy().parse::<RawPid>() {
                 Ok(pid) => pid,
                 _ => {
                     continue;

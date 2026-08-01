@@ -10,6 +10,7 @@
 use crate::cmd;
 use crate::Container;
 use crate::Error;
+use crate::RawPid;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -26,7 +27,7 @@ impl Container for Kubernetes {
     /// There is many ways to do this:
     ///  - similar to command.rs: a bit looser pattern matching on /proc/$pid/cmdline
     ///  - the following:
-    fn lookup(&self, container_id: &str) -> Result<libc::pid_t, Error> {
+    fn lookup(&self, container_id: &str) -> Result<RawPid, Error> {
         let (namespace, pod_name, container_name) = parse_userinput(container_id);
         let containerdid = get_containerd_id(namespace, pod_name, container_name)?;
         let cgroup = find_cgroup(containerdid)?;
@@ -162,7 +163,7 @@ fn visit_dirs(dir: &Path, containerdid: &OsString) -> Option<PathBuf> {
 }
 
 /// return any pid part of this cgroup
-pub(crate) fn get_cgroup_pid(cgroup: &Path) -> Result<libc::pid_t, Error> {
+pub(crate) fn get_cgroup_pid(cgroup: &Path) -> Result<RawPid, Error> {
     let path = cgroup.join("cgroup.procs");
     let bytes = fs::read(&path).map_err(|source| Error::Io {
         path: path.clone(),
@@ -179,5 +180,5 @@ pub(crate) fn get_cgroup_pid(cgroup: &Path) -> Result<libc::pid_t, Error> {
         container: path.display().to_string(),
         source,
     })?;
-    Ok(pid as libc::pid_t)
+    Ok(pid as RawPid)
 }

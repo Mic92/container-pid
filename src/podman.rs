@@ -2,12 +2,13 @@ use crate::cmd;
 use crate::docker::parse_docker_output;
 use crate::Container;
 use crate::Error;
+use crate::RawPid;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Podman {}
 
 impl Container for Podman {
-    fn lookup(&self, container_id: &str) -> Result<libc::pid_t, Error> {
+    fn lookup(&self, container_id: &str) -> Result<RawPid, Error> {
         let cmd = vec![
             "podman",
             "inspect",

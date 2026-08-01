@@ -1,15 +1,15 @@
-use libc::pid_t;
 use std::process::Command;
 
 use crate::cmd;
 use crate::Container;
 use crate::Error;
+use crate::RawPid;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Nspawn {}
 
 impl Container for Nspawn {
-    fn lookup(&self, container_id: &str) -> Result<pid_t, Error> {
+    fn lookup(&self, container_id: &str) -> Result<RawPid, Error> {
         let output = Command::new("machinectl")
             .args(["show", "--property=Leader", container_id])
             .output()
@@ -38,7 +38,7 @@ impl Container for Nspawn {
         let pid = String::from_utf8_lossy(fields[1]);
 
         pid.trim_end()
-            .parse::<pid_t>()
+            .parse::<RawPid>()
             .map_err(|source| Error::InvalidPid {
                 pid: pid.trim().to_string(),
                 runtime: "machinectl",

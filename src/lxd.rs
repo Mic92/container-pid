@@ -1,15 +1,15 @@
-use libc::pid_t;
 use std::process::Command;
 
 use crate::cmd;
 use crate::Container;
 use crate::Error;
+use crate::RawPid;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Lxd {}
 
 impl Container for Lxd {
-    fn lookup(&self, container_id: &str) -> Result<pid_t, Error> {
+    fn lookup(&self, container_id: &str) -> Result<RawPid, Error> {
         let output = Command::new("lxc")
             .args(["info", container_id])
             .output()
@@ -43,7 +43,7 @@ impl Container for Lxd {
             let pid = String::from_utf8_lossy(pid_row[1]);
 
             pid.trim_start()
-                .parse::<pid_t>()
+                .parse::<RawPid>()
                 .map_err(|source| Error::InvalidPid {
                     pid: pid.trim().to_string(),
                     runtime: "lxd",

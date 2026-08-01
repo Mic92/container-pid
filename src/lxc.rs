@@ -1,15 +1,15 @@
-use libc::pid_t;
 use std::process::Command;
 
 use crate::cmd;
 use crate::Container;
 use crate::Error;
+use crate::RawPid;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Lxc {}
 
 impl Container for Lxc {
-    fn lookup(&self, container_id: &str) -> Result<pid_t, Error> {
+    fn lookup(&self, container_id: &str) -> Result<RawPid, Error> {
         let output = Command::new("lxc-info")
             .args(["--no-humanize", "--pid", "--name", container_id])
             .output()
@@ -30,7 +30,7 @@ impl Container for Lxc {
         let pid = String::from_utf8_lossy(&output.stdout);
 
         pid.trim_start()
-            .parse::<pid_t>()
+            .parse::<RawPid>()
             .map_err(|source| Error::InvalidPid {
                 pid: pid.trim().to_string(),
                 runtime: "lxc",

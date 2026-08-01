@@ -1,15 +1,15 @@
-use libc::pid_t;
 use std::process::Command;
 
 use crate::cmd;
 use crate::Container;
 use crate::Error;
+use crate::RawPid;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Containerd {}
 
 impl Container for Containerd {
-    fn lookup(&self, container_id: &str) -> Result<pid_t, Error> {
+    fn lookup(&self, container_id: &str) -> Result<RawPid, Error> {
         let output = Command::new("ctr")
             .args(["task", "list"])
             .output()
@@ -48,7 +48,7 @@ impl Container for Containerd {
         });
         match pid_str {
             Some(pid_str) => pid_str
-                .parse::<pid_t>()
+                .parse::<RawPid>()
                 .map_err(|source| Error::InvalidPid {
                     pid: pid_str,
                     runtime: "containerd",

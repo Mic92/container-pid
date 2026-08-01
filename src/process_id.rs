@@ -1,4 +1,3 @@
-use libc::pid_t;
 use std::env;
 use std::ffi::OsString;
 use std::fs;
@@ -7,6 +6,7 @@ use std::path::PathBuf;
 
 use crate::Container;
 use crate::Error;
+use crate::RawPid;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ProcessId {}
@@ -17,9 +17,9 @@ fn get_path() -> PathBuf {
 }
 
 impl Container for ProcessId {
-    fn lookup(&self, container_id: &str) -> Result<pid_t, Error> {
+    fn lookup(&self, container_id: &str) -> Result<RawPid, Error> {
         let pid = container_id
-            .parse::<pid_t>()
+            .parse::<RawPid>()
             .map_err(|source| Error::InvalidProcessId(container_id.to_string(), source))?;
 
         let proc_path = get_path().join(pid.to_string());

@@ -2,6 +2,8 @@ use std::fmt::Write;
 use std::path::PathBuf;
 use thiserror::Error;
 
+use crate::RawPid;
+
 /// Errors that can occur while resolving a container name to a PID.
 #[derive(Debug, Error)]
 pub enum Error {
@@ -55,7 +57,8 @@ pub enum Error {
     InvalidProcessId(String, #[source] std::num::ParseIntError),
     /// No process with the given PID exists.
     #[error("no process with PID {0} found")]
-    NoSuchProcess(libc::pid_t),
+    NoSuchProcess(RawPid),
+
     /// None of the tried container runtimes could resolve the container.
     #[error("failed to find container '{container}' - tried the following runtimes:{tried}")]
     NoRuntimeMatched { container: String, tried: String },

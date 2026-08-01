@@ -1,6 +1,8 @@
-use libc::pid_t;
 use std::fmt::Debug;
 use std::fmt::Write;
+
+/// A raw process ID as used by the kernel.
+pub type RawPid = i32;
 
 mod cmd;
 mod command;
@@ -17,7 +19,7 @@ mod process_id;
 pub use errors::Error;
 
 pub trait Container: Debug {
-    fn lookup(&self, id: &str) -> Result<pid_t, Error>;
+    fn lookup(&self, id: &str) -> Result<RawPid, Error>;
     fn check_required_tools(&self) -> Result<(), Error>;
 }
 
@@ -68,7 +70,7 @@ pub fn lookup_container_type(name: &str) -> Option<Box<dyn Container>> {
 pub fn lookup_container_pid(
     container_id: &str,
     container_types: &[Box<dyn Container>],
-) -> Result<pid_t, Error> {
+) -> Result<RawPid, Error> {
     for c in container_types {
         c.check_required_tools()?;
     }
