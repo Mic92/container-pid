@@ -1,24 +1,24 @@
-use anyhow::bail;
 use libc::pid_t;
 use std::fmt::Debug;
-
-use crate::result::Result;
+use std::fmt::Write;
 
 mod cmd;
 mod command;
 mod containerd;
 mod docker;
+mod errors;
 mod kubernetes;
 mod lxc;
 mod lxd;
 mod nspawn;
 mod podman;
 mod process_id;
-mod result;
+
+pub use errors::Error;
 
 pub trait Container: Debug {
-    fn lookup(&self, id: &str) -> Result<pid_t>;
-    fn check_required_tools(&self) -> Result<()>;
+    fn lookup(&self, id: &str) -> Result<pid_t, Error>;
+    fn check_required_tools(&self) -> Result<(), Error>;
 }
 
 pub const AVAILABLE_CONTAINER_TYPES: &[&str] = &[
@@ -68,7 +68,7 @@ pub fn lookup_container_type(name: &str) -> Option<Box<dyn Container>> {
 pub fn lookup_container_pid(
     container_id: &str,
     container_types: &[Box<dyn Container>],
-) -> Result<pid_t> {
+) -> Result<pid_t, Error> {
     for c in container_types {
         c.check_required_tools()?;
     }
@@ -79,15 +79,18 @@ pub fn lookup_container_pid(
         container_types
     };
 
-    let mut message = String::from("failed to find container - tried the following runtimes:");
+    let mut tried = String::new();
     for t in types {
         match t.lookup(container_id) {
             Ok(pid) => return Ok(pid),
             Err(e) => {
-                message += &format!("\n  - {:?}: {}", t, e);
+                let _ = write!(tried, "\n  - {:?}: {}", t, errors::format_chain(&e));
             }
         };
     }
 
-    bail!("{}", message)
+    Err(Error::NoRuntimeMatched {
+        container: container_id.to_string(),
+        tried,
+    })
 }

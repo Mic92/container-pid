@@ -8,9 +8,8 @@
 //! - two `/`: `namespace/podname/container` to be super explicit
 
 use crate::cmd;
-use crate::result::Result;
 use crate::Container;
-use anyhow::{bail, Context};
+use crate::Error;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -27,29 +26,22 @@ impl Container for Kubernetes {
     /// There is many ways to do this:
     ///  - similar to command.rs: a bit looser pattern matching on /proc/$pid/cmdline
     ///  - the following:
-    fn lookup(&self, container_id: &str) -> Result<libc::pid_t> {
-        let (namespace, pod_name, container_name) = parse_userinput(container_id)
-            .with_context(|| format!("failed to parse container ID '{}'", container_id))?;
-        let containerdid =
-            get_containerd_id(namespace, pod_name, container_name).with_context(|| {
-                format!(
-                    "failed to get containerd ID for pod '{}' in namespace '{}'",
-                    pod_name, namespace
-                )
-            })?;
-        let cgroup = find_cgroup(containerdid.clone()).with_context(|| {
-            format!("failed to find cgroup for containerd ID '{}'", containerdid)
-        })?;
-        let pid = get_cgroup_pid(&cgroup)
-            .with_context(|| format!("failed to get PID from cgroup '{}'", cgroup.display()))?;
+    fn lookup(&self, container_id: &str) -> Result<libc::pid_t, Error> {
+        let (namespace, pod_name, container_name) = parse_userinput(container_id);
+        let containerdid = get_containerd_id(namespace, pod_name, container_name)?;
+        let cgroup = find_cgroup(containerdid)?;
+        let pid = get_cgroup_pid(&cgroup)?;
         Ok(pid)
     }
 
-    fn check_required_tools(&self) -> Result<()> {
+    fn check_required_tools(&self) -> Result<(), Error> {
         if cmd::which("kubectl").is_some() {
             Ok(())
         } else {
-            bail!("kubernetes runtime not found: 'kubectl' command is not available")
+            Err(Error::RuntimeNotFound {
+                runtime: "kubernetes",
+                tool: "kubectl",
+            })
         }
     }
 }
@@ -57,16 +49,14 @@ impl Container for Kubernetes {
 /// allows the user to prepend the pod name with `custom-namespace/pod-name` to override the
 /// namespace (`default`). By default this will take the first container of the pod. That however
 /// can be overridden by appending it like `namespace/podname/container`.
-pub(crate) fn parse_userinput(container_id: &str) -> Result<(&str, &str, Option<&str>)> {
+pub(crate) fn parse_userinput(container_id: &str) -> (&str, &str, Option<&str>) {
     let fields = container_id.splitn(3, '/').collect::<Vec<&str>>();
-    if fields.len() == 1 {
-        return Ok((DEFAULT_NAMESPACE, container_id, None));
-    } else if fields.len() == 2 {
-        return Ok((fields[0], fields[1], None));
-    } else if fields.len() == 3 {
-        return Ok((fields[0], fields[1], Some(fields[2])));
+    match fields.as_slice() {
+        [pod_name] => (DEFAULT_NAMESPACE, pod_name, None),
+        [namespace, pod_name] => (namespace, pod_name, None),
+        [namespace, pod_name, container] => (namespace, pod_name, Some(container)),
+        _ => unreachable!(),
     }
-    unreachable!();
 }
 
 /// find `containerd://hash` id and return hash.
@@ -75,7 +65,7 @@ pub(crate) fn get_containerd_id(
     namespace: &str,
     pod_name: &str,
     container_name: Option<&str>,
-) -> Result<String> {
+) -> Result<String, Error> {
     let jsonpath = format!("jsonpath='{{range .items[?(@.metadata.name==\"{}\")].status.containerStatuses[*]}}{{.name}}{{\"\\t\"}}{{.containerID}}{{\"\\n\"}}{{end}}'", pod_name);
     let result = Command::new("kubectl")
         .arg("get")
@@ -85,19 +75,24 @@ pub(crate) fn get_containerd_id(
         .arg("-n")
         .arg(namespace)
         .output()
-        .context("failed to execute 'kubectl get pod'")?;
+        .map_err(|source| Error::CommandFailedToRun {
+            command: "kubectl get pod".to_string(),
+            source,
+        })?;
 
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
-        bail!(
-            "kubectl get pod failed (exit status {}): {}",
-            result.status,
-            stderr
-        );
+        return Err(Error::CommandFailed {
+            command: "kubectl get pod".to_string(),
+            status: result.status.to_string(),
+            stderr: stderr.to_string(),
+        });
     }
 
-    let containers =
-        from_utf8(&result.stdout).context("kubectl response contains non-UTF8 data")?;
+    let containers = from_utf8(&result.stdout).map_err(|_| Error::UnexpectedOutput {
+        command: "kubectl get pod".to_string(),
+        message: "response contains non-UTF8 data".to_string(),
+    })?;
     let containerid = containers.split('\n').find_map(|line| {
         // line = "containername\tcontainerdid"
         let cols: Vec<&str> = line.split('\t').collect();
@@ -116,60 +111,73 @@ pub(crate) fn get_containerd_id(
         None
     });
 
-    let containerid = containerid.ok_or_else(|| {
-        if let Some(name) = container_name {
-            anyhow::anyhow!("no container named '{}' found in pod '{}'", name, pod_name)
-        } else {
-            anyhow::anyhow!("no containers found in pod '{}'", pod_name)
-        }
+    let containerid = containerid.ok_or_else(|| Error::ContainerNotFound {
+        container: pod_name.to_string(),
+        message: match container_name {
+            Some(name) => format!("no container named '{}' found in pod '{}'", name, pod_name),
+            None => format!("no containers found in pod '{}'", pod_name),
+        },
     })?;
 
-    let containerid = containerid.strip_prefix("containerd://").ok_or_else(|| {
-        anyhow::anyhow!(
-            "container ID does not have expected 'containerd://' prefix: {}",
-            containerid
-        )
-    })?;
+    let containerid =
+        containerid
+            .strip_prefix("containerd://")
+            .ok_or_else(|| Error::UnexpectedOutput {
+                command: "kubectl get pod".to_string(),
+                message: format!(
+                    "container ID does not have expected 'containerd://' prefix: {}",
+                    containerid
+                ),
+            })?;
     Ok(String::from(containerid))
 }
 
-pub(crate) fn find_cgroup(containerdid: String) -> Result<PathBuf> {
-    let path = visit_dirs(
-        &PathBuf::from("/sys/fs/cgroup"),
-        &OsString::from(containerdid),
-    )?;
-    Ok(path)
+pub(crate) fn find_cgroup(containerdid: String) -> Result<PathBuf, Error> {
+    let root = PathBuf::from("/sys/fs/cgroup");
+    let containerdid = OsString::from(containerdid);
+    match visit_dirs(&root, &containerdid) {
+        Some(path) => Ok(path),
+        None => Err(Error::ContainerNotFound {
+            container: containerdid.to_string_lossy().into_owned(),
+            message: "cgroup not found in /sys/fs/cgroup".to_string(),
+        }),
+    }
 }
 
 // one possible implementation of walking a directory from
 // https://doc.rust-lang.org/std/fs/fn.read_dir.html
-fn visit_dirs(dir: &Path, containerdid: &OsString) -> Result<PathBuf> {
-    for entry in std::fs::read_dir(dir)
-        .with_context(|| format!("failed to read directory '{}'", dir.display()))?
-    {
-        let entry = entry
-            .with_context(|| format!("failed to read entry in directory '{}'", dir.display()))?;
+fn visit_dirs(dir: &Path, containerdid: &OsString) -> Option<PathBuf> {
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
         if &entry.file_name() == containerdid {
-            return Ok(entry.path());
+            return Some(entry.path());
         }
         let path = entry.path();
         if path.is_dir() {
-            if let Ok(path) = visit_dirs(&path, containerdid) {
-                return Ok(path);
+            if let Some(path) = visit_dirs(&path, containerdid) {
+                return Some(path);
             }
         }
     }
-    bail!("cgroup not found in directory tree");
+    None
 }
 
 /// return any pid part of this cgroup
-pub(crate) fn get_cgroup_pid(cgroup: &Path) -> Result<libc::pid_t> {
+pub(crate) fn get_cgroup_pid(cgroup: &Path) -> Result<libc::pid_t, Error> {
     let path = cgroup.join("cgroup.procs");
-    let bytes = fs::read(&path)
-        .with_context(|| format!("failed to read cgroup.procs file at '{}'", path.display()))?;
-    let pids = String::from_utf8(bytes).context("cgroup.procs contains non-UTF8 data")?;
+    let bytes = fs::read(&path).map_err(|source| Error::Io {
+        path: path.clone(),
+        source,
+    })?;
+    let pids = String::from_utf8(bytes).map_err(|_| Error::UnexpectedOutput {
+        command: format!("reading {}", path.display()),
+        message: "cgroup.procs contains non-UTF8 data".to_string(),
+    })?;
     let pids = pids.splitn(2, '\n').collect::<Vec<&str>>()[0]; // first line
-    let pid: u64 = u64::from_str(pids)
-        .with_context(|| format!("invalid PID value '{}' in cgroup.procs", pids))?;
+    let pid: u64 = u64::from_str(pids).map_err(|source| Error::InvalidPid {
+        pid: pids.to_string(),
+        runtime: "kubernetes",
+        container: path.display().to_string(),
+        source,
+    })?;
     Ok(pid as libc::pid_t)
 }

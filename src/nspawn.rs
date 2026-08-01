@@ -1,53 +1,59 @@
-use anyhow::{bail, Context};
 use libc::pid_t;
 use std::process::Command;
 
 use crate::cmd;
-use crate::result::Result;
 use crate::Container;
+use crate::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Nspawn {}
 
 impl Container for Nspawn {
-    fn lookup(&self, container_id: &str) -> Result<pid_t> {
+    fn lookup(&self, container_id: &str) -> Result<pid_t, Error> {
         let output = Command::new("machinectl")
-            .args(&["show", "--property=Leader", container_id])
+            .args(["show", "--property=Leader", container_id])
             .output()
-            .context("failed to execute 'machinectl show'")?;
+            .map_err(|source| Error::CommandFailedToRun {
+                command: "machinectl show".to_string(),
+                source,
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!(
-                "machinectl show command failed (exit status {}): {}",
-                output.status,
-                stderr.trim_end()
-            );
+            return Err(Error::CommandFailed {
+                command: "machinectl show".to_string(),
+                status: output.status.to_string(),
+                stderr: stderr.trim_end().to_string(),
+            });
         }
 
         let fields: Vec<&[u8]> = output.stdout.splitn(2, |c| *c == b'=').collect();
         if fields.len() != 2 {
-            bail!(
-                "unexpected output format from machinectl show for container '{}'",
-                container_id
-            );
+            return Err(Error::UnexpectedOutput {
+                command: "machinectl show".to_string(),
+                message: format!("unexpected output format for container '{}'", container_id),
+            });
         }
 
         let pid = String::from_utf8_lossy(fields[1]);
 
-        pid.trim_end().parse::<pid_t>().with_context(|| {
-            format!(
-                "invalid PID '{}' from machinectl for container '{}'",
-                pid.trim(),
-                container_id
-            )
-        })
+        pid.trim_end()
+            .parse::<pid_t>()
+            .map_err(|source| Error::InvalidPid {
+                pid: pid.trim().to_string(),
+                runtime: "machinectl",
+                container: container_id.to_string(),
+                source,
+            })
     }
-    fn check_required_tools(&self) -> Result<()> {
+    fn check_required_tools(&self) -> Result<(), Error> {
         if cmd::which("machinectl").is_some() {
             Ok(())
         } else {
-            bail!("systemd-nspawn runtime not found: 'machinectl' command is not available")
+            Err(Error::RuntimeNotFound {
+                runtime: "systemd-nspawn",
+                tool: "machinectl",
+            })
         }
     }
 }

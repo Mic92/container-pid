@@ -1,28 +1,30 @@
-use anyhow::{bail, Context};
 use libc::pid_t;
 use std::process::Command;
 
 use crate::cmd;
-use crate::result::Result;
 use crate::Container;
+use crate::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Lxd {}
 
 impl Container for Lxd {
-    fn lookup(&self, container_id: &str) -> Result<pid_t> {
+    fn lookup(&self, container_id: &str) -> Result<pid_t, Error> {
         let output = Command::new("lxc")
-            .args(&["info", container_id])
+            .args(["info", container_id])
             .output()
-            .context("failed to execute 'lxc info'")?;
+            .map_err(|source| Error::CommandFailedToRun {
+                command: "lxc info".to_string(),
+                source,
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!(
-                "lxc info command failed (exit status {}): {}",
-                output.status,
-                stderr.trim_end()
-            );
+            return Err(Error::CommandFailed {
+                command: "lxc info".to_string(),
+                status: output.status.to_string(),
+                stderr: stderr.trim_end().to_string(),
+            });
         }
 
         let lines = output.stdout.split(|&c| c == b'\n');
@@ -33,29 +35,39 @@ impl Container for Lxd {
 
         if let Some(pid_row) = rows.find(|cols| cols[0] == b"Pid") {
             if pid_row.len() != 2 {
-                bail!("unexpected format in 'Pid' field from lxc info");
+                return Err(Error::UnexpectedOutput {
+                    command: "lxc info".to_string(),
+                    message: "unexpected format in 'Pid' field".to_string(),
+                });
             }
             let pid = String::from_utf8_lossy(pid_row[1]);
 
-            pid.trim_start().parse::<pid_t>().with_context(|| {
-                format!(
-                    "invalid PID '{}' from lxd for container '{}'",
-                    pid.trim(),
-                    container_id
-                )
-            })
+            pid.trim_start()
+                .parse::<pid_t>()
+                .map_err(|source| Error::InvalidPid {
+                    pid: pid.trim().to_string(),
+                    runtime: "lxd",
+                    container: container_id.to_string(),
+                    source,
+                })
         } else {
-            bail!(
-                "no 'Pid' field found in lxd info output for container '{}'",
-                container_id
-            )
+            Err(Error::UnexpectedOutput {
+                command: "lxc info".to_string(),
+                message: format!(
+                    "no 'Pid' field found in output for container '{}'",
+                    container_id
+                ),
+            })
         }
     }
-    fn check_required_tools(&self) -> Result<()> {
+    fn check_required_tools(&self) -> Result<(), Error> {
         if cmd::which("lxc").is_some() {
             Ok(())
         } else {
-            bail!("LXD runtime not found: 'lxc' command is not available")
+            Err(Error::RuntimeNotFound {
+                runtime: "LXD",
+                tool: "lxc",
+            })
         }
     }
 }

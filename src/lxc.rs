@@ -1,45 +1,51 @@
-use anyhow::{bail, Context};
 use libc::pid_t;
 use std::process::Command;
 
 use crate::cmd;
-use crate::result::Result;
 use crate::Container;
+use crate::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Lxc {}
 
 impl Container for Lxc {
-    fn lookup(&self, container_id: &str) -> Result<pid_t> {
+    fn lookup(&self, container_id: &str) -> Result<pid_t, Error> {
         let output = Command::new("lxc-info")
-            .args(&["--no-humanize", "--pid", "--name", container_id])
+            .args(["--no-humanize", "--pid", "--name", container_id])
             .output()
-            .context("failed to execute 'lxc-info'")?;
+            .map_err(|source| Error::CommandFailedToRun {
+                command: "lxc-info".to_string(),
+                source,
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!(
-                "lxc-info command failed (exit status {}): {}",
-                output.status,
-                stderr.trim_start()
-            );
+            return Err(Error::CommandFailed {
+                command: "lxc-info".to_string(),
+                status: output.status.to_string(),
+                stderr: stderr.trim_start().to_string(),
+            });
         }
 
         let pid = String::from_utf8_lossy(&output.stdout);
 
-        pid.trim_start().parse::<pid_t>().with_context(|| {
-            format!(
-                "invalid PID '{}' from lxc-info for container '{}'",
-                pid.trim(),
-                container_id
-            )
-        })
+        pid.trim_start()
+            .parse::<pid_t>()
+            .map_err(|source| Error::InvalidPid {
+                pid: pid.trim().to_string(),
+                runtime: "lxc",
+                container: container_id.to_string(),
+                source,
+            })
     }
-    fn check_required_tools(&self) -> Result<()> {
+    fn check_required_tools(&self) -> Result<(), Error> {
         if cmd::which("lxc-info").is_some() {
             Ok(())
         } else {
-            bail!("LXC runtime not found: 'lxc-info' command is not available")
+            Err(Error::RuntimeNotFound {
+                runtime: "LXC",
+                tool: "lxc-info",
+            })
         }
     }
 }

@@ -1,4 +1,3 @@
-use anyhow::{bail, Context};
 use libc::pid_t;
 use std::env;
 use std::ffi::OsString;
@@ -6,8 +5,8 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 
-use crate::result::Result;
 use crate::Container;
+use crate::Error;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ProcessId {}
@@ -18,23 +17,27 @@ fn get_path() -> PathBuf {
 }
 
 impl Container for ProcessId {
-    fn lookup(&self, container_id: &str) -> Result<pid_t> {
+    fn lookup(&self, container_id: &str) -> Result<pid_t, Error> {
         let pid = container_id
             .parse::<pid_t>()
-            .with_context(|| format!("'{}' is not a valid PID (process ID)", container_id))?;
+            .map_err(|source| Error::InvalidProcessId(container_id.to_string(), source))?;
 
-        match fs::metadata(get_path().join(pid.to_string())) {
+        let proc_path = get_path().join(pid.to_string());
+        match fs::metadata(&proc_path) {
             Err(e) => {
                 if e.kind() == ErrorKind::NotFound {
-                    bail!("no process with PID {} found", pid)
+                    Err(Error::NoSuchProcess(pid))
                 } else {
-                    Err(e).with_context(|| format!("failed to lookup process {}", pid))?
+                    Err(Error::Io {
+                        path: proc_path,
+                        source: e,
+                    })
                 }
             }
             Ok(_) => Ok(pid),
         }
     }
-    fn check_required_tools(&self) -> Result<()> {
+    fn check_required_tools(&self) -> Result<(), Error> {
         Ok(())
     }
 }

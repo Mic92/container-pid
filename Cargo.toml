@@ -1,6 +1,6 @@
 [package]
 name = "container-pid"
-version = "1.0.0"
+version = "2.0.0"
 authors = ["Jörg Thalheim <joerg@thalheim.io>"]
 description = "Resolve container names to their PIDs"
 license = "MIT"
@@ -10,4 +10,4 @@ edition = "2018"
 
 [dependencies]
 libc = "0.2"
-anyhow = "1.0"
+thiserror = "2"

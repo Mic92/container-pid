@@ -20,7 +20,7 @@ pub(crate) fn main() {
         vec![]
     };
     let name = &args[1];
-    match lookup_container_pid(&name, &types) {
+    match lookup_container_pid(name, &types) {
         Ok(pid) => {
             println!("{}", pid);
         }
